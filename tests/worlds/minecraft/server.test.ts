@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer } from 'node:http';
 import {
-  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -665,7 +665,8 @@ describe('MinecraftServerManager:世界身份 realm', () => {
     mgr = makeMgr(dir);
     const old = mgr.realm();
     // 删掉重开:目录名一样,世界是另一个
-    rmSync(join(dir, '世界甲'), { recursive: true, force: true });
+    unlinkSync(join(dir, '世界甲', REALM_MARKER_FILE));
+    rmdirSync(join(dir, '世界甲'));
     const fresh = mgr.realm();
     expect(fresh?.levelName).toBe('世界甲');
     expect(fresh?.uuid).toMatch(/^[0-9a-f-]{36}$/);
