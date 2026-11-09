@@ -77,6 +77,7 @@ describe('QQ 草稿确认集成', () => {
 
   it('draft→confirm(send):通过 Core 向 MockOneBot 发送消息', async () => {
     // 一次唤醒内:round1 起草并触发屏障,round2 复核后确认发送
+    llm.script(toolReply([{ name: 'discover_tools', args: { names: ['qq_draft', 'qq_confirm'] } }]));
     llm.script(toolReply([{ name: 'qq_draft', args: { to: `group:${GROUP}`, text: '大家好呀' } }]));
     llm.script(toolReply([{ name: 'qq_confirm', args: { decision: 'send' } }]));
 

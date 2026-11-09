@@ -41,7 +41,7 @@ describe('工具集(按认知路径)', () => {
   });
 
   it('自报的自有工具名 = 没挂 World 时主 session 的整张表(装配层据此拒绝撞名的 World)', () => {
-    expect([...core.ownToolNames()].sort()).toEqual(names(main));
+    expect([...core.ownToolNames()].sort()).toEqual([...names(main), 'discover_tools'].sort());
   });
 
   it('读写往返:write_file→read_file→list_files', async () => {

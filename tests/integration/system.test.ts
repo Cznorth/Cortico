@@ -96,6 +96,7 @@ describe('全系统集成(控制台对话链路)', () => {
 
 
     llm.script(
+      toolReply([{ name: 'discover_tools', args: { names: ['console_send'] } }]),
       toolReply([{ name: 'console_send', args: { text: '你好phantivia!我能看到这条消息。' } }]),
     );
     ws.send(JSON.stringify({ type: 'msg', text: '在吗,bot?' }));

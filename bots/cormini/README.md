@@ -21,6 +21,10 @@ Open `http://127.0.0.1:7788/` and talk to it in the console view.
 
 ## What it does
 
+World tool definitions are loaded on demand through `discover_tools`. The tool searches names
+and descriptions and loads selected names for subsequent model calls. Loaded tools remain available
+across context handoffs and restarts until the session is cleared or their World is hidden.
+
 - **The workspace is the memory.** `workspace/` is the whole of it. The bot works on it
   with the standard file toolset: `read_file` (whole file or a line range), `write_file`,
   `edit_file` (exact-string replace), `delete_file`, `list_files` (folded directory

@@ -83,6 +83,21 @@ export const END_TURN_DECL: Omit<ToolDef, 'handler'> = {
   parameters: { type: 'object', properties: {}, required: [] },
 };
 
+export const DISCOVER_TOOLS_DECL: Omit<ToolDef, 'handler'> = {
+  name: 'discover_tools',
+  description: 'Find World tools by name or description and load selected tools for subsequent calls. Omit query to list all available tools.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Text to find in tool names and descriptions.' },
+      names: { type: 'array', items: { type: 'string' }, description: 'Exact tool names to load.' },
+    },
+    additionalProperties: false,
+  },
+  tags: ['flow'],
+  barrierAfter: true,
+};
+
 /**
  * 显式结束本次唤醒的 yield 工具，仅挂在主 session。fork 以最后一段文本作为返回值，不挂终止工具。
  */
@@ -98,6 +113,7 @@ export const CORMINI_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   ...WORKSPACE_TOOL_DECLS,
   SAVE_BLOB_DECL,
   END_TURN_DECL,
+  DISCOVER_TOOLS_DECL,
 ];
 
 /** Cormini 自有工具给人看的一句话,进 bot 的自描述。 */
@@ -115,6 +131,7 @@ export const CORMINI_TOOL_SUMMARIES: Readonly<Record<string, DescribeText>> = {
     en: 'Saves an image or other binary attachment it has seen into the workspace and gets a lasting handle.',
   },
   end_turn: { zh: '结束这一轮,等新事件或心跳再醒。', en: 'Ends the turn until a new event or the heartbeat wakes the bot.' },
+  discover_tools: { zh: '查找并加载 World 工具。', en: 'Finds and loads World tools.' },
 };
 
 /** 阶段预算、软阈值比例和交接笔记预算比例。 */
@@ -675,6 +692,19 @@ export class Cormini implements Persona {
         get outputTap() { return self.outputTap(); },
         // 自有尾巴排在 World 工具之后:工具表顺序直接影响请求前缀的缓存命中
         tools: () => [...this.tools(), ...this.ioTools(), ...this.mainTailTools()],
+        deferredTools: {
+          names: () => this.ioTools().map((tool) => tool.name),
+          discovery: (available, load) => ({
+            ...DISCOVER_TOOLS_DECL,
+            handler: async (args) => {
+              const query = typeof args.query === 'string' ? args.query.toLowerCase() : '';
+              const names = Array.isArray(args.names) ? args.names.filter((name): name is string => typeof name === 'string') : [];
+              const loaded = load(names);
+              const matches = available().filter((tool) => `${tool.name} ${tool.description}`.toLowerCase().includes(query));
+              return JSON.stringify({ loaded, tools: matches.map(({ name, description }) => ({ name, description })) });
+            },
+          }),
+        },
       },
     ];
   }
@@ -686,7 +716,7 @@ export class Cormini implements Persona {
 
   /** 自有工具 = 文件工具面 + 主 session 尾巴;各 session 声明里 World 之外的都出自这两处。 */
   ownToolNames(): string[] {
-    return [...new Set([...this.tools(), ...this.mainTailTools()].map((t) => t.name))];
+    return [...new Set([...this.tools(), ...this.mainTailTools()].map((t) => t.name).concat('discover_tools'))];
   }
 
   private sortedWorlds(): World[] {

@@ -166,6 +166,7 @@ describe.sequential('CortiV 集成测试', () => {
   });
 
   it('WebUI 输入能即时唤醒、调用发送工具并回到同一个 WebSocket', async () => {
+    llm.script(toolReply([{ name: 'discover_tools', args: { names: ['console_send'] } }]));
     llm.script(toolReply([
       { name: 'console_send', args: { text: '我收到了，试播 WebUI 链路正常。' } },
     ]));
