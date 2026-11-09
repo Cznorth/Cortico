@@ -20,7 +20,7 @@ import { ABORT_PREEMPTED, ABORT_SHUTDOWN, INTERRUPTED_WHILE_RUNNING, NOT_EXECUTE
 import type { UsageRecord, Persona } from '../../src/core/types.ts';
 import type { ChatMessage, LLMDelta } from './fixture-types.ts';
 import { functionCall, functionResult, type ContextRecord } from '../../src/protocol/open-responses/context.ts';
-import type { Logger, CandidateProjector, EventEnvelope, RunPhase, World, WorldHost, ToolDef } from '../../src/core/types.ts';
+import type { Logger, CandidateProjector, EventEnvelope, RunPhase, World, WorldHost, ToolDef, SessionDecl } from '../../src/core/types.ts';
 import type { BotConfig } from '../../bots/corti-soulmate/assemble.ts';
 import {
   activeSpec,
@@ -49,6 +49,7 @@ async function until(cond: () => boolean, timeoutMs = 5000): Promise<void> {
 }
 
 interface RigOptions {
+  deferredTools?: SessionDecl['deferredTools'];
   cfgPatch?: (cfg: BotConfig) => void;
   worlds?: World[];
   /** 对模型隐藏但仍挂载运行的 World id。 */
@@ -119,6 +120,7 @@ function makeRig(opts: RigOptions = {}) {
   });
   if (opts.hooks) Object.assign(persona, opts.hooks);
   const decl = persona.declareSessions()[0];
+  decl.deferredTools = opts.deferredTools;
   const loop = new MainLoop({
     cfg,
     llm,
@@ -232,6 +234,82 @@ describe('MainLoop standard Response execution', () => {
     startedAt: new Date().toISOString(), elapsedMs: 10, requestId: null, responseId,
     outcome: 'completed', status: 200, serviceTier: 'default', charges: [],
     meters: { ...unknownMeters(), input: 10, output: 2, total: 12 },
+  });
+
+  it('loads visible deferred tools on the next round and restores their order from state', async () => {
+    const executed: string[] = [];
+    const deferredTools: NonNullable<SessionDecl['deferredTools']> = {
+      names: () => ['late', 'hidden'],
+      discovery: (available, load) => ({
+        ...makeTool('discover', () => ''),
+        handler: async () => JSON.stringify({ available: available().map(t => t.name), loaded: load(['late', 'hidden']) }),
+      }),
+    };
+    const rig = makeRig({
+      silent: true, deferredTools, hiddenWorlds: ['hidden-world'],
+      worlds: [makeFakeIO('visible', [makeTool('late', () => { executed.push('late'); return 'ok'; })]), makeFakeIO('hidden-world', [makeTool('hidden', 'hidden')])],
+      outputTap: { onDelta() {} },
+    });
+    const requests: string[][] = [];
+    let index = 0;
+    rig.llm.respond = async (request, options) => {
+      requests.push((request.tools ?? []).map(t => t.name));
+      const response = createResponse(`deferred_${index}`, request);
+      const calls = index++ === 0 ? ['discover', 'late'] : index === 2 ? ['late'] : [];
+      response.output = calls.map((name, i) => ({ type: 'function_call' as const, id: `item_${index}_${i}`, call_id: `call_${index}_${i}`, name, arguments: '{}', status: 'completed' as const }));
+      response.status = 'completed';
+      response.output.forEach((item, output_index) => options?.onEvent?.({ type: 'response.output_item.done', sequence_number: output_index, output_index, item }));
+      return { response, origin, attempts: [attempt(response.id)] };
+    };
+    try {
+      rig.start(); rig.pushEvent('go');
+      await until(() => requests.length >= 3);
+      expect(requests[0]).toContain('discover');
+      expect(requests[0]).not.toContain('late');
+      expect(requests[1]).toContain('late');
+      expect(requests[1]).not.toContain('hidden');
+      expect(executed).toEqual(['late']);
+      expect(rig.state.data.loadedTools.main).toEqual(['late']);
+      const restored = new CoreState(rig.tmp.dir);
+      restored.load();
+      expect(restored.data.loadedTools.main).toEqual(['late']);
+    } finally { await rig.cleanup(); }
+  });
+
+  it('restores loaded tools across handoff and filters hidden Worlds on prefix reload', async () => {
+    const hiddenWorlds: string[] = [];
+    const deferredTools: NonNullable<SessionDecl['deferredTools']> = {
+      names: () => ['late'],
+      discovery: () => makeTool('discover', 'ok'),
+    };
+    const rig = makeRig({ silent: true, deferredTools, hiddenWorlds,
+      worlds: [makeFakeIO('visible', [makeTool('late', 'ok')])],
+      preState: state => { state.data.loadedTools.main = ['late']; state.save(); },
+    });
+    const requests: string[][] = [];
+    rig.llm.respond = async request => {
+      requests.push((request.tools ?? []).map(t => t.name));
+      const response = createResponse(`restored_${requests.length}`, request);
+      response.status = 'completed';
+      return { response, origin, attempts: [attempt(response.id)] };
+    };
+    try {
+      rig.start(); rig.pushEvent('first');
+      await until(() => requests.length === 1);
+      expect(requests[0]).toContain('late');
+      await rig.loop.handoffContext();
+      rig.pushEvent('second');
+      await until(() => requests.length === 2);
+      expect(requests[1]).toEqual(requests[0]);
+      hiddenWorlds.push('visible');
+      await rig.loop.reloadSystemPrefix();
+      rig.pushEvent('third');
+      await until(() => requests.length === 3);
+      expect(requests[2]).not.toContain('late');
+      expect(rig.state.data.loadedTools.main).toEqual(['late']);
+      await rig.loop.clearSession();
+      expect(rig.state.data.loadedTools.main).toBeUndefined();
+    } finally { await rig.cleanup(); }
   });
 
   it('waits for preceding Items when done events arrive out of order and honors a barrier', async () => {

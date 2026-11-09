@@ -19,6 +19,7 @@ export interface CoreStateData {
   persona: Record<string, unknown>;
   /** World 可见性默认开启并跨重启保留；隐藏不改变挂载或运行状态。 */
   worldVisibility: Record<string, boolean>;
+  loadedTools: Record<string, string[]>;
 }
 
 const DEFAULTS: CoreStateData = {
@@ -27,10 +28,11 @@ const DEFAULTS: CoreStateData = {
   llmStall: { since: 0, at: [] },
   persona: {},
   worldVisibility: {},
+  loadedTools: {},
 };
 
 function freshDefaults(): CoreStateData {
-  return { ...DEFAULTS, llmStall: { since: 0, at: [] }, persona: {}, worldVisibility: {} };
+  return { ...DEFAULTS, llmStall: { since: 0, at: [] }, persona: {}, worldVisibility: {}, loadedTools: {} };
 }
 
 function readStall(raw: unknown): { since: number; at: number[] } {
@@ -74,6 +76,9 @@ export class CoreState {
                 Object.entries(raw.worldVisibility as Record<string, unknown>).map(([k, v]) => [k, v !== false]),
               )
             : {},
+        loadedTools: raw.loadedTools && typeof raw.loadedTools === 'object' && !Array.isArray(raw.loadedTools)
+          ? Object.fromEntries(Object.entries(raw.loadedTools).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((n): n is string => typeof n === 'string')]))
+          : {},
       };
     } catch {
       // 损坏则用默认值

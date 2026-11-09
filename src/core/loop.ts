@@ -263,6 +263,7 @@ export class MainLoop {
   private running = false;
   private stopFn: (() => void) | null = null;
   private toolDefs: ToolDef[] = [];
+  private deferredNames = new Set<string>();
   private batchesHandled = 0;
   private roundsLastBatch = 0;
   /** 跨唤醒批次单调递增的轮序号;每建一份工具 ctx 加一,透传给 ToolCallContext.round */
@@ -481,7 +482,43 @@ export class MainLoop {
       seen.add(def.name);
       defs.push(def);
     }
+    this.deferredNames = new Set(decl.deferredTools?.names() ?? []);
+    if (decl.deferredTools) {
+      const discovery = decl.deferredTools.discovery(
+        () => this.toolDefs.filter((t) => this.deferredNames.has(t.name)),
+        (names) => this.loadTools(names),
+      );
+      if (!seen.has(discovery.name) && !RESERVED_FRAME_NAMES.has(discovery.name)) {
+        defs.push({ ...discovery, barrierAfter: true });
+      } else {
+        log.warn(`工具重名,跳过发现工具: ${discovery.name}`);
+      }
+    }
     this.toolDefs = defs;
+  }
+
+  private loadTools(names: readonly string[]): string[] {
+    const available = new Set(this.toolDefs.filter((t) => this.deferredNames.has(t.name)).map((t) => t.name));
+    const state = this.d.state.data.loadedTools;
+    const loaded = state[this.d.decl.id] ?? [];
+    const additions = names.filter((name, index) => available.has(name) && !loaded.includes(name) && names.indexOf(name) === index);
+    if (additions.length) {
+      state[this.d.decl.id] = [...loaded, ...additions];
+      this.d.state.save();
+    }
+    return names.filter((name) => available.has(name));
+  }
+
+  private requestTools(): ToolDef[] {
+    const loaded = this.d.state.data.loadedTools[this.d.decl.id] ?? [];
+    const byName = new Map(this.toolDefs.map((t) => [t.name, t]));
+    return [
+      ...this.toolDefs.filter((t) => !this.deferredNames.has(t.name)),
+      ...loaded.flatMap((name) => {
+        const def = byName.get(name);
+        return def && this.deferredNames.has(name) ? [def] : [];
+      }),
+    ];
   }
 
   /** 空 tags 只报告一次。 */
@@ -1106,7 +1143,6 @@ export class MainLoop {
 
   private async roundsInScope(generation: number): Promise<void> {
     const { llm, session, log, bus, decl } = this.d;
-    const schemas = this.getToolSchemas();
     const caps = decl.rounds();
     this.roundsLastBatch = 0;
     // tap 接收流式增量；其异常只记日志，不中断模型调用。
@@ -1117,6 +1153,8 @@ export class MainLoop {
 
     for (let round = 1; ; round++) {
       if (!this.active(generation)) return;
+      const roundTools = this.requestTools();
+      const schemas = roundTools.map(({ name, description, parameters, tags }) => ({ name, description, parameters, tags }));
       this.roundsLastBatch = round;
       let spec: ModelSpec;
       try { spec = this.d.spec(); } catch (error) {
@@ -1165,7 +1203,7 @@ export class MainLoop {
       // barrierAfter 阻止之后的调用提前执行。
       const eager = tap
         ? new EagerDispatch(
-            () => this.toolDefs, ctx, log, decl.id, this.d.toolLog,
+            () => roundTools, ctx, log, decl.id, this.d.toolLog,
             () => this.active(generation),
             (name) => this.d.toolOwner?.(name),
             flight.interrupt.signal,
@@ -1386,7 +1424,7 @@ export class MainLoop {
         }
 
         let out: ToolOutcome;
-        const def = this.toolDefs.find((t) => t.name === call.name);
+        const def = roundTools.find((t) => t.name === call.name);
         if (!def) {
           out = { text: UNKNOWN_TOOL };
           withAnchors({ call: call.call_id }, () => recordToolCall(this.d.toolLog, decl.id, call.name, null, Date.now(), out));
@@ -1744,6 +1782,8 @@ export class MainLoop {
 
   private async performClearSession(generation: number): Promise<void> {
     const { session, log } = this.d;
+    delete this.d.state.data.loadedTools[this.d.decl.id];
+    this.d.state.save();
     const sysMsg = await this.buildSystem();
     if (!this.active(generation)) return;
     session.reset([sysMsg]);

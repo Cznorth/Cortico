@@ -32,6 +32,7 @@ describe('CoreState', () => {
       llmStall: { since: 0, at: [] },
       persona: {},
       worldVisibility: {},
+      loadedTools: {},
     });
   });
 

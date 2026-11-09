@@ -441,6 +441,11 @@ export interface SessionDecl {
   /** 生成期间向此接收器转发输出增量；运行中不变。 */
   outputTap?: OutputTap;
   tools: () => ToolDef[];
+  /** Persona 选择延迟提供的工具，并提供发现工具。 */
+  deferredTools?: {
+    names: () => readonly string[];
+    discovery: (available: () => readonly ToolDef[], load: (names: readonly string[]) => string[]) => ToolDef;
+  };
 }
 
 /** 接收模型输出流；Core 不解释增量中的语义。 */

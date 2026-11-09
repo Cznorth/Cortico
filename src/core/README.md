@@ -42,6 +42,11 @@ Persona 通过 `CoreApi` 访问：`injectInternal` / `injectDeferred` / `injectE
 `requestContextHandoff`、`spawnFork`、`sessionInfo`、`llm`、`timers`、`deliveryGate`、
 `personaState` / `savePersonaState`、`toolsTagged`、`blob`、`log`。
 
+`SessionDecl.deferredTools` 是工具定义延迟加载的可选机制。Persona 选择延迟的工具并提供发现工具；
+Core 只允许加载当前可见的声明工具，并在下一轮请求中追加其定义。加载顺序存于 Core 状态，
+重启和交接后保留，清空 session 时清除。工具表变化会使请求前缀缓存失效；重复加载不改变工具表。
+未声明此机制的 session 仍提供完整工具表。
+
 ## 总线与唤醒
 
 `WakeBus` 提供 `preempt`、`interrupt`、`flush`、`debounce`、`piggyback` 五种触发模式。
