@@ -57,7 +57,7 @@ interface RigOptions {
   /** 对模型隐藏但仍挂载运行的 World id。 */
   hiddenWorlds?: string[];
   /** 时机钩子,直接装到假Persona上 */
-  hooks?: Pick<Persona, 'onTurnEnded' | 'onIdle' | 'onStallsRecovered' | 'onDelivery'>;
+  hooks?: Pick<Persona, 'onTurnEnded' | 'onIdle' | 'onStallsRecovered' | 'onDelivery' | 'reasoningOverride'>;
   /** 记录 schedule_wake 对 timers 原语的调用。 */
   onTimerSet?: (atIso: string, payload: Record<string, unknown>) => void;
   /** fork 工具的执行函数。 */
@@ -238,6 +238,26 @@ function makeRig(opts: RigOptions = {}) {
 }
 
 describe('MainLoop standard Response execution', () => {
+  it('passes the per-request reasoning preference without changing the configured spec', async () => {
+    let preference: 'minimum' | undefined = 'minimum';
+    const seen: Array<{ override: unknown; spec: unknown }> = [];
+    const rig = makeRig({ silent: true, hooks: { reasoningOverride: () => preference } });
+    const respond = rig.llm.respond.bind(rig.llm);
+    rig.llm.respond = async (request, options) => {
+      seen.push({ override: options?.reasoningOverride, spec: structuredClone(options?.nativeSpec) });
+      return respond(request, options);
+    };
+    try {
+      rig.start(); rig.pushEvent('one');
+      await until(() => seen.length >= 1 && rig.loop.getStatus().batchesHandled >= 1);
+      preference = undefined;
+      rig.pushEvent('two');
+      await until(() => seen.length >= 2 && rig.loop.getStatus().batchesHandled >= 2);
+      expect(seen[0].override).toBe('minimum');
+      expect(seen[1].override).toBeUndefined();
+      expect(seen[0].spec).toEqual(seen[1].spec);
+    } finally { await rig.cleanup(); }
+  });
   const origin = { instance: 'canonical', module: 'test', model: 'test', compatibilityDomain: 'test' };
   const attempt = (responseId: string): ProviderAttempt => ({
     id: `attempt_${responseId}`, generationId: responseId, ordinal: 0, origin,

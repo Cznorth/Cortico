@@ -1020,6 +1020,8 @@ export interface Persona {
    * 内部行之后、外部正文之前。钩子抛错或拒绝时 Core 记录 warn，带着已注入的内容照常投递。
    */
   onDelivery?(ctx: { events: EventEnvelope[] }): void | Promise<void>;
+  /** Per-request reasoning preference for the main session. */
+  reasoningOverride?(): 'minimum' | undefined;
   /**
    * 一批事件处理结束时调用；Persona 可查询 sessionInfo 并决定是否请求交接。
    * Core 在超过 hardTokens 时强制交接。

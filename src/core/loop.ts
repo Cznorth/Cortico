@@ -1258,6 +1258,7 @@ export class MainLoop {
         try {
           res = await llm.respond(responseRequest(spec, outbound, schemas), {
             context: outbound, nativeSpec: spec, onEvent,
+            reasoningOverride: this.d.persona.reasoningOverride?.(),
             role: decl.id,
             sessionId: this.mainTrack?.id,
             signal: flight.controller.signal,

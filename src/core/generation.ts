@@ -75,6 +75,8 @@ export interface GenerateOptions {
   /** Local context retains output reasoning and media references alongside the request Items. */
   context?: readonly ContextRecord[];
   nativeSpec?: ModelSpec;
+  /** Select the provider's lowest supported reasoning setting for this request. */
+  reasoningOverride?: 'minimum';
   origin?: ItemOrigin;
   quote?: (at: QuoteTime) => readonly PriceSnapshot[];
   /** Diagnostic requests use a single attempt and cannot recursively diagnose. */

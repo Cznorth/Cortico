@@ -75,6 +75,9 @@ piggyback 只入队，随后续唤醒一起投递。
 
 一批正文归档后，Core 调用 `Persona.onDelivery` 并等待它返回的 Promise,不设期限。完成前
 `injectInternal` 的内容排在这批的内部行末尾、外部正文之前;完成后的注入进入总线。
+`Persona.reasoningOverride` 可在每次主会话模型请求前返回 `minimum`,作为 `GenerateOptions.reasoningOverride`
+传给 provider;不返回时不改变模型配置。具体最低档由 provider 映射,不支持该偏好的 provider 可以忽略。
+重试和工具后续请求分别再次读取钩子;Persona 负责按投递及批末生命周期维护状态。
 
 状态 0、429 或 5xx 的模型调用失败，可保留已记录的输出和工具回执，按 `ResubmitPolicy` 重试。
 默认允许连续重试 2 次、每批最多 4 次，退避为 2 秒、10 秒；上下文超限、抢占、关机或轮数
